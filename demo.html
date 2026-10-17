@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prompt Optimizer · DSH 提示词优化插件演示</title>
+<style>
+  :root{
+    --bg:#0f1115; --bg-elev:#161a21; --bg-elev2:#1c212a; --line:#252b36;
+    --fg:#e7eaf0; --fg-dim:#9aa4b2; --fg-dim2:#6b7480;
+    --brand:#5b8cff; --brand-2:#8b6bff; --ok:#3ecf8e; --err:#ff6b6b;
+    --radius:10px; --radius-sm:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    padding:28px 20px 64px;
+  }
+  .wrap{max-width:980px;margin:0 auto}
+
+  /* ---------- header ---------- */
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-dim);
+    border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--bg-elev)}
+  h1{font-size:26px;line-height:1.3;margin:14px 0 6px;letter-spacing:-.2px}
+  h1 .spark{color:var(--brand)}
+  .lede{color:var(--fg-dim);margin:0 0 8px}
+  .meta{color:var(--fg-dim2);font-size:12px;margin-bottom:26px}
+  .meta code{background:var(--bg-elev);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--fg-dim)}
+
+  /* ---------- panels ---------- */
+  section{background:var(--bg-elev);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;margin:0 0 20px}
+  section > h2{font-size:15px;margin:0 0 4px;font-weight:600}
+  section > p.sub{margin:0 0 14px;color:var(--fg-dim);font-size:13px}
+
+  /* ---------- fake composer ---------- */
+  .composer{background:var(--bg-elev2);border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+  .composer .editor{min-height:84px;border-bottom:1px solid var(--line);padding:2px 4px 10px}
+  .composer textarea{
+    width:100%;min-height:72px;resize:vertical;background:transparent;border:none;outline:none;
+    color:var(--fg);font:inherit;font-size:14px;line-height:1.6;
+  }
+  .composer textarea::placeholder{color:var(--fg-dim2)}
+  .toolrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 4px 2px}
+  .toolrow .left{color:var(--fg-dim2);font-size:12px;display:flex;align-items:center;gap:8px}
+  .trailing{display:flex;align-items:center;gap:12px;flex:none;margin-left:auto}
+  .standardControls{display:flex;align-items:center;gap:12px}
+
+  /* the plugin's own two cells: DOM order = re-optimize, star */
+  .pluginCells{display:flex;align-items:center;gap:2px;flex:none}
+  .iconBtn{
+    width:28px;height:28px;min-width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;
+    border:none;border-radius:var(--radius-sm);background:transparent;color:var(--fg-dim);
+    cursor:pointer;outline:none;transition:background .12s ease,color .12s ease,opacity .18s ease;
+  }
+  .iconBtn:hover:not(:disabled){background:rgba(255,255,255,.07)}
+  .iconBtn:focus-visible{box-shadow:0 0 0 2px var(--brand)}
+  .iconBtn:disabled{color:var(--fg-dim2);cursor:default}
+  #reoptimize{opacity:0;transform:translateX(4px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+  #reoptimize.show{opacity:1;transform:none;pointer-events:auto}
+
+  .modelBtn{
+    display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 10px;border-radius:var(--radius-sm);
+    border:none;background:transparent;color:var(--fg-dim);font-size:13px;cursor:pointer;
+  }
+  .modelBtn:hover{background:rgba(255,255,255,.07)}
+  .sendBtn{
+    width:32px;height:32px;border-radius:999px;border:none;cursor:pointer;
+    background:linear-gradient(180deg,var(--brand),#3f6fe0);color:#fff;
+    display:inline-flex;align-items:center;justify-content:center;font-size:15px;
+  }
+
+  .callout{
+    margin:14px 0 0;padding:10px 12px;border-radius:var(--radius-sm);font-size:13px;
+    border:1px solid var(--line);background:rgba(91,140,255,.07);color:var(--fg-dim);
+  }
+  .callout b{color:var(--fg)}
+  .callout .kbd{font-family:ui-monospace,Consolas,monospace;font-size:12px;
+    background:var(--bg-elev2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+  /* ---------- state chips ---------- */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-dim);
+    border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--bg-elev2)}
+  .chip.on{color:var(--ok);border-color:rgba(62,207,142,.35);background:rgba(62,207,142,.08)}
+  .dot{width:6px;height:6px;border-radius:999px;background:currentColor;opacity:.9}
+
+  /* ---------- before / after ---------- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  .pane{background:var(--bg-elev2);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .pane header{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:9px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--fg-dim)}
+  .pane .body{padding:12px;white-space:pre-wrap;font-size:13px;min-height:120px}
+  .pane.after{border-color:rgba(91,140,255,.35)}
+  .pane.after .body{color:#f2f5ff}
+  .badge{font-size:11px;border-radius:999px;padding:2px 7px;border:1px solid var(--line);color:var(--fg-dim)}
+  .badge.brand{color:#cfe0ff;border-color:rgba(91,140,255,.4);background:rgba(91,140,255,.12)}
+  .skeleton{display:inline-block;height:11px;border-radius:5px;background:linear-gradient(90deg,#222834,#2c3444,#222834);
+    background-size:200% 100%;animation:sk 1.1s linear infinite;margin:3px 0}
+  @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .spin{display:inline-block;animation:sp .9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---------- flow ---------- */
+  ol.flow{margin:0;padding-left:22px;color:var(--fg-dim);font-size:13px}
+  ol.flow li{margin:7px 0}
+  ol.flow code{color:#cfe0ff;background:var(--bg-elev2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--fg-dim);font-weight:500}
+  td code{background:var(--bg-elev2);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:#cfe0ff;font-size:12px}
+  .ok{color:var(--ok)}
+  .note{color:var(--fg-dim2);font-size:12px}
+  footer{color:var(--fg-dim2);font-size:12px;text-align:center;margin-top:28px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="tag">DSH 插件 · 演示页</span>
+  <h1><span class="spark">✦</span> Prompt Optimizer</h1>
+  <p class="lede">对话框右下角的小星星：用<strong>当前正在使用的模型</strong>，就地重写输入框里的提示词；首次优化后，星星左侧会出现<strong>重新优化</strong>按钮。</p>
+  <p class="meta">包名 <code>dsh-plugin-prompt-optimizer</code> · 宿主方法 <code>promptOptimizer/optimize(request, signal)</code> · 挂载槽位 <code>conversation.input.right</code></p>
+
+  <!-- ============ 1. interactive demo ============ -->
+  <section>
+    <h2>交互演示</h2>
+    <p class="sub">下面是可以点的真实交互：改写输入框内容 → 点 ✦ → 观察按钮状态与结果；再点 ↻ 重新优化。</p>
+
+    <div class="composer">
+      <div class="editor">
+        <textarea id="draft" spellcheck="false" placeholder="在这里输入提示词，然后点右下角的 ✦ …">帮我写个爬虫</textarea>
+      </div>
+
+      <div class="toolrow">
+        <div class="left">
+          <span>＋</span>
+          <span id="phaseHint">可直接编辑</span>
+        </div>
+        <div class="trailing">
+          <div class="standardControls">
+            <!-- 插件占位：DOM 顺序为 [重新优化, 星星]，因此星星紧贴模型按钮左侧 -->
+            <div class="pluginCells">
+              <button id="reoptimize" class="iconBtn" title="重新优化" aria-label="重新优化" type="button">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M13.2 6.2A5.5 5.5 0 0 0 3.4 4.9"/><path d="M3.4 4.9V2.3"/><path d="M3.4 4.9h2.6"/>
+                  <path d="M2.8 9.8a5.5 5.5 0 0 0 9.8 1.3"/><path d="M12.6 11.1v2.6"/><path d="M12.6 11.1h-2.6"/>
+                </svg>
+              </button>
+              <button id="optimize" class="iconBtn" title="优化提示词" aria-label="优化提示词" type="button">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 1.6l1.55 4.05L13.6 7.2l-4.05 1.55L8 12.8 6.45 8.75 2.4 7.2l4.05-1.55z"/>
+                  <path d="M12.4 11.1l.6 1.55 1.55.6-1.55.6-.6 1.55-.6-1.55-1.55-.6 1.55-.6z"/>
+                </svg>
+              </button>
+            </div>
+            <!-- 官方模型切换按钮（插件不改动它） -->
+            <button class="modelBtn" type="button" title="切换模型">
+              <span id="modelName">deepseek-flash</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5l4 4 4-4"/></svg>
+            </button>
+          </div>
+          <button class="sendBtn" type="button" title="发送">↑</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout" id="status">
+      <b>就绪。</b> 星星渲染在模型按钮的左侧 —— 槽位 <span class="kbd">conversation.input.right</span> 在 DOM 中先于
+      <span class="kbd">conversation.input.model</span> 出现，因此天然占据这个位置。
+    </div>
+
+    <div class="chips">
+      <span class="chip" id="chipPhase"><i class="dot"></i>phase: plain</span>
+      <span class="chip" id="chipDraft"><i class="dot"></i>draft 非空</span>
+      <span class="chip" id="chipModel"><i class="dot"></i>模型来自当前会话</span>
+      <span class="chip" id="chipReopt"><i class="dot"></i>重新优化按钮</span>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+      <button id="reset" class="modelBtn" style="border:1px solid var(--line);padding:0 12px" type="button">重置演示</button>
+      <button class="modelBtn" style="border:1px solid var(--line);padding:0 12px" type="button" onclick="document.getElementById('draft').value='帮我写个爬虫';document.getElementById('reset').click()">换回示例</button>
+    </div>
+  </section>
+
+  <!-- ============ 2. before / after ============ -->
+  <section>
+    <h2>优化前 / 优化后</h2>
+    <p class="sub">左侧是输入框原文，右侧是当前模型返回、并已写回输入框的内容（可直接继续编辑）。</p>
+    <div class="grid2">
+      <div class="pane">
+        <header><span>输入框原文</span><span class="badge">draft</span></header>
+        <div class="body" id="paneBefore">帮我写个爬虫</div>
+      </div>
+      <div class="pane after">
+        <header><span>优化结果</span><span class="badge brand" id="afterBadge">等待优化</span></header>
+        <div class="body" id="paneAfter">点一下 ✦ 试试。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. flow ============ -->
+  <section>
+    <h2>点击后发生了什么</h2>
+    <ol class="flow">
+      <li>客户端读出草稿与当前模型：<code>props.useInput(s =&gt; s).draft</code>，模型取自
+        <code>sessions.binding(sessionId).session.projections.faceOf('modelSelection')</code> 的 <code>next ?? lastUsed</code>。</li>
+      <li>通过已有连接调用宿主：<code>remote.promptOptimizer.optimize({ text, kind, provider, model, sessionId })</code>。</li>
+      <li>宿主用 <code>ctx.get('llm').stream(options)</code> 发起一次性补全 —— 刻意<strong>不带</strong>
+        <code>purpose</code>（该字段是只允许 <code>compaction</code>/<code>session-title</code> 的封闭联合），<code>maxTokens</code> 固定 4000。</li>
+      <li>返回后 <code>inputActions.setDraft(value.text)</code> 整体替换草稿；若 <code>phase</code> 是
+        <code>adjudicating</code>/<code>submitting</code> 则按钮禁用（此时任何草稿写入都会被运行时拒绝）。</li>
+      <li>成功后记录原文与结果，星星左侧出现 <strong>重新优化</strong>；再点它以 <code>kind:'refine'</code> 发起第二次改写，并带上
+        <code>previous</code> 与修订说明。</li>
+    </ol>
+  </section>
+
+  <!-- ============ 4. contract ============ -->
+  <section>
+    <h2>插件契约</h2>
+    <table>
+      <tr><th>项</th><th>值</th></tr>
+      <tr><td>包名 / 入口</td><td><code>dsh-plugin-prompt-optimizer</code> · <code>lib/index.js</code>（宿主）、<code>lib/client.js</code>（客户端 bundle）</td></tr>
+      <tr><td>加载器条目</td><td><code>cordis.patch.yml</code> → <code>- insert: id: prompt-optimizer</code></td></tr>
+      <tr><td>宿主服务</td><td><code>ctx.provide('promptOptimizer', service)</code>，并挂 <code>typertRemote {service, serviceKey, namespace}</code></td></tr>
+      <tr><td>暴露方法</td><td><code>optimize(request, signal)</code> —— 末尾 <code>signal</code> 会被网关识别为取消信号</td></tr>
+      <tr><td>请求字段</td><td><code>text</code>（≤20000 字符）、<code>kind: 'optimize' | 'refine'</code>、<code>provider</code>、<code>model</code>、<code>reasoningEffort?</code>、<code>sessionId?</code>、<code>previous?</code></td></tr>
+      <tr><td>返回</td><td><code>{ text, kind }</code>（有 usage 时附带）</td></tr>
+      <tr><td>UI 槽位</td><td><code>conversation.input.right</code>（list / session 作用域），条目 id <code>prompt-optimizer</code>，order 40</td></tr>
+      <tr><td>图标</td><td>官方 primitives 的 <code>IconSparkleMedium</code> 与 <code>IconRefreshOutlineMedium</code></td></tr>
+      <tr><td>错误码</td><td><code>prompt-optimizer/empty-draft</code>、<code>invalid-request</code>、<code>draft-too-long</code>、<code>no-model</code>、<code>no-llm</code>、<code>aborted</code>、<code>max-tokens</code>、<code>empty-result</code>，以及网关的 <code>gateway/internal</code></td></tr>
+    </table>
+  </section>
+
+  <footer>本页为自包含演示（无外部依赖、无需联网）。真实行为以 DSH 运行时为准。</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- tiny DOM helper -------------------------------------------------
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // ---- demo data -------------------------------------------------------
+  var SAMPLES = [
+    { match: "爬虫", before: "帮我写个爬虫", after:
+      "用 Python 写一个命令行爬虫。\n" +
+      "目标：抓取一个列表页上的文章标题、链接和发布时间，翻页直到没有下一页。\n" +
+      "要求：\n" +
+      "1. 用 requests + BeautifulSoup，遵守 robots.txt，请求间隔 1 秒；\n" +
+      "2. 结果写入 CSV，字段为 title, url, published_at（UTF-8，带表头）；\n" +
+      "3. 失败重试 3 次（指数退避），把失败 URL 记到 failed.log；\n" +
+      "4. 支持 --pages N 限制页数，默认为 10；\n" +
+      "5. 给出完整可运行代码、依赖安装命令，以及一段最小示例用法。\n" +
+      "如果目标站点结构未知，先让我提供一段示例 HTML。",
+      refine:
+      "用 Python 写一个命令行爬虫（single-file，Python 3.11+）。\n" +
+      "目标：抓取列表页文章的 title、url、published_at，持续翻页直到「没有下一页」或达到 --pages 上限。\n" +
+      "实现约束：\n" +
+      "1. requests + BeautifulSoup4；启动时读取并遵守 robots.txt；请求间隔 1s（可 --delay 覆盖）；\n" +
+      "2. 输出 CSV：字段顺序 title,url,published_at，UTF-8 带 BOM，写入 --out 指定路径（默认 articles.csv）；\n" +
+      "3. 网络失败重试 3 次、指数退避（0.5s/1s/2s）；最终失败写入 failed.log，格式「URL<TAB>错误原因」；\n" +
+      "4. CLI：--url（必填）、--pages（默认 10）、--out、--delay；\n" +
+      "5. 交付物：完整代码 + requirements.txt 内容 + 一条可复制的运行示例。\n" +
+      "验收：对给定示例 HTML 运行一次，CSV 行数与页面条目数一致。\n" +
+      "若站点结构未知，先输出需要我提供的选择器信息。" },
+
+    { match: "周报", before: "写周报", after:
+      "把我们本周的工作整理成一份周报，用中文输出。\n" +
+      "结构：① 本周完成（按项目分组，每条一句话，附结果/数据）② 进行中（含当前进度与阻塞项）③ 风险与求助 ④ 下周计划。\n" +
+      "要求：只依据我提供的信息，不要编造数据；缺失的关键数字用「待补」标注；全文控制在 400 字内。\n" +
+      "先列出你需要的输入清单，等我补齐后再成文。",
+      refine:
+      "把我们本周的工作整理成一份中文周报（≤400 字）。\n" +
+      "结构固定：① 本周完成 ② 进行中 ③ 风险与求助 ④ 下周计划。\n" +
+      "规则：每条不超过两行；完成项必须附可核对的产出或数据；没有数字的地方写「待补」，禁止推测填充；\n" +
+      "风险项必须写成「问题 → 影响 → 我需要谁做什么」。\n" +
+      "先输出你还需要我补充的输入清单；我补齐后再给出终稿。" },
+
+    { match: "sql|SQL|查询|表", before: "写个 SQL 查询", after:
+      "写一条 PostgreSQL 查询，从 orders 表中统计每个客户最近 30 天的订单。\n" +
+      "已知：orders(id, customer_id, status, total_amount, created_at)，customers(id, name)。\n" +
+      "要求：\n" +
+      "1. 只统计 status = 'paid' 的订单；时间范围用 created_at >= now() - interval '30 days'；\n" +
+      "2. 输出 customer_id、客户名称、订单数、金额合计，按金额合计倒序；\n" +
+      "3. 没有订单的客户保留，订单数记为 0（用 LEFT JOIN + COALESCE）；\n" +
+      "4. 给出建表假设说明，并附一条可直接执行的示例与预期输出格式。",
+      refine:
+      "写一条 PostgreSQL 查询（版本 14+）：统计每个客户最近 30 天的已支付订单。\n" +
+      "表结构假设：orders(id bigint, customer_id bigint, status text, total_amount numeric, created_at timestamptz)；\n" +
+      "customers(id bigint, name text)。若假设不符请指出。\n" +
+      "输出列（别名固定）：customer_id, customer_name, paid_orders, paid_amount。\n" +
+      "规则：status='paid' 且 created_at >= now() - interval '30 days'；无订单客户保留且 paid_orders=0（LEFT JOIN + COALESCE）；\n" +
+      "按 paid_amount DESC, customer_id ASC 排序；金额保留两位小数。\n" +
+      "交付：可直接执行的 SQL + 一段说明索引建议（customer_id, created_at 复合索引）。" }
+  ];
+
+  var FALLBACK = SAMPLES[0];
+
+  function pick(draft) {
+    for (var i = 0; i < SAMPLES.length; i++) {
+      if (new RegExp(SAMPLES[i].match, "i").test(draft)) return SAMPLES[i];
+    }
+    return null;
+  }
+
+  function buildOptimized(draft) {
+    var s = pick(draft);
+    if (s) return s.after;
+    var t = draft.trim();
+    return "【任务】" + t + "\n" +
+      "【背景】说明这个任务的上下文、目标读者与最终用途。\n" +
+      "【要求】\n" +
+      "1. 明确输出格式、篇幅上限与语言；\n" +
+      "2. 给出必须遵守的约束（不要做什么、可以假设什么）；\n" +
+      "3. 指出验收标准，说明怎样算完成；\n" +
+      "4. 若关键信息缺失，先列出需要我补充的问题，不要自行假设。\n" +
+      "【交付】完整结果 + 一段最简用法示例。";
+  }
+
+  function buildRefined(draft, optimized) {
+    var s = pick(draft);
+    if (s) return s.refine;
+    return optimized +
+      "\n\n【第二轮修订】\n" +
+      "- 把每条要求改写成可核对的动作，避免形容词；\n" +
+      "- 输出格式与字段名固定下来，字段顺序明确；\n" +
+      "- 明确验收标准与失败处理方式；\n" +
+      "- 需要我补充的信息集中放在最后，用列表列出。";
+  }
+
+  // ---- state (mirrors the plugin: phase gating + in-flight guard) ------
+  var busy = false;
+  var original = null;
+  var optimized = null;
+
+  var draftEl = $("draft"), optBtn = $("optimize"), reBtn = $("reoptimize");
+  var statusEl = $("status"), paneBefore = $("paneBefore"), paneAfter = $("paneAfter"), afterBadge = $("afterBadge");
+  var chipPhase = $("chipPhase"), chipDraft = $("chipDraft"), chipReopt = $("chipReopt"), phaseHint = $("phaseHint");
+
+  function readPhase() {
+    var submitted = statusEl.dataset.phase === "submitting" || statusEl.dataset.phase === "adjudicating";
+    return submitted ? statusEl.dataset.phase : "plain";
+  }
+  function setStatus(html, phase) {
+    statusEl.innerHTML = html;
+    statusEl.dataset.phase = phase || "plain";
+    phaseHint.textContent = phase === "plain" ? "可直接编辑" : "phase: " + phase;
+    chipPhase.className = "chip" + (phase === "plain" ? " on" : "");
+    chipPhase.innerHTML = '<i class="dot"></i>phase: ' + (phase || "plain");
+  }
+
+  function refresh() {
+    var text = draftEl.value || "";
+    var phase = readPhase();
+    var blocked = phase === "submitting" || phase === "adjudicating";
+    optBtn.disabled = busy || blocked || text.trim() === "";
+    reBtn.disabled = busy || blocked;
+    chipDraft.className = "chip" + (text.trim() !== "" ? " on" : "");
+    chipDraft.innerHTML = '<i class="dot"></i>draft ' + (text.trim() === "" ? "为空（按钮禁用）" : "非空");
+    reBtn.classList.toggle("show", !busy && optimized !== null);
+    chipReopt.className = "chip" + (optimized !== null ? " on" : "");
+    chipReopt.innerHTML = '<i class="dot"></i>重新优化 ' + (optimized !== null ? "已出现" : "未出现");
+    paneBefore.textContent = original !== null ? original : text;
+  }
+
+  function spinner() {
+    var svg = optBtn.querySelector("svg");
+    if (svg) svg.classList.add("spin");
+  }
+  function stopSpinner() {
+    var svg = optBtn.querySelector("svg");
+    if (svg) svg.classList.remove("spin");
+  }
+
+  function skeleton() {
+    paneAfter.innerHTML = "";
+    paneAfter.appendChild(el("div", "skeleton")).style.width = "92%";
+    var b = el("div", "skeleton"); b.style.width = "78%"; paneAfter.appendChild(b);
+    var c = el("div", "skeleton"); c.style.width = "85%"; paneAfter.appendChild(c);
+    var d = el("div", "skeleton"); d.style.width = "46%"; paneAfter.appendChild(d);
+  }
+
+  function run(kind) {
+    if (busy) return;
+    var text = (kind === "refine" ? original : draftEl.value) || "";
+    if (text.trim() === "") return;
+    if (kind === "optimize") original = text;
+
+    busy = true;
+    stopSpinner(); spinner();
+    paneAfter.textContent = "";
+    skeleton();
+    afterBadge.textContent = "调用模型中…";
+    var model = $("modelName").textContent.trim();
+    setStatus('<b>' + (kind === "optimize" ? "优化中…" : "重新优化中…") + '</b> 正在用 <span class="kbd">' +
+      model + '</span> 改写草稿（kind: <span class="kbd">' + kind + '</span>）。', "plain");
+    refresh();
+
+    var result = kind === "optimize" ? buildOptimized(original) : buildRefined(original, optimized);
+    var delay = kind === "optimize" ? 950 : 780;
+
+    window.setTimeout(function () {
+      optimized = result;
+      draftEl.value = result;          // inputActions.setDraft(value.text)
+      paneAfter.textContent = result;
+      afterBadge.textContent = kind === "optimize" ? "已写回输入框" : "已重新写回";
+      busy = false;
+      stopSpinner();
+      setStatus('<b>' + (kind === "optimize" ? "优化完成。" : "重新优化完成。") +
+        '</b> 结果已写回输入框，可继续手动编辑；星星左侧的 <span class="kbd">↻</span> 按钮现在可用。', "plain");
+      refresh();
+    }, delay);
+  }
+
+  optBtn.addEventListener("click", function () { run("optimize"); });
+  reBtn.addEventListener("click", function () { run("refine"); });
+  draftEl.addEventListener("input", function () {
+    if (optimized === null) refresh();
+  });
+  $("reset").addEventListener("click", function () {
+    busy = false; original = null; optimized = null;
+    draftEl.value = "帮我写个爬虫";
+    paneAfter.textContent = "点一下 ✦ 试试。";
+    afterBadge.textContent = "等待优化";
+    stopSpinner();
+    setStatus('<b>就绪。</b> 星星渲染在模型按钮的左侧 —— 槽位 <span class="kbd">conversation.input.right</span> 先于 <span class="kbd">conversation.input.model</span>。', "plain");
+    refresh();
+  });
+
+  // simulate a phase transition so the gating is visible
+  window.setTimeout(function () {
+    setStatus('<b>就绪。</b> 星星渲染在模型按钮的左侧。试着把 phase 切到 <span class="kbd">submitting</span> 看按钮如何禁用。', "plain");
+  }, 600);
+
+  refresh();
+
+  // expose a tiny hook for manual phase testing from the console
+  window.__demo = {
+    setPhase: function (p) { statusEl.dataset.phase = p; refresh(); }
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Loader entry for the prompt optimizer: one host half, one client bundle.
+- insert:
+    - id: prompt-optimizer
+      name: dsh-plugin-prompt-optimizer
